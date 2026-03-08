@@ -1,0 +1,244 @@
+import sys
+import sqlite3
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+                             QHBoxLayout, QTableWidget, QTableWidgetItem, 
+                             QPushButton, QLineEdit, QTextEdit, QComboBox,
+                             QLabel, QMessageBox, QDialog, QFormLayout,
+                             QDoubleSpinBox, QSpinBox, QHeaderView)
+from PyQt6.QtCore import Qt
+
+
+class CoffeeDialog(QDialog):
+    def __init__(self, parent=None, coffee_data=None):
+        super().__init__(parent)
+        self.coffee_data = coffee_data
+        self.setWindowTitle("Добавить кофе" if coffee_data is None else "Редактировать кофе")
+        self.setModal(True)
+        
+        layout = QFormLayout(self)
+        
+        self.name_edit = QLineEdit()
+        self.roast_combo = QComboBox()
+        self.roast_combo.addItems(["Светлая", "Средняя", "Темная"])
+        self.grind_combo = QComboBox()
+        self.grind_combo.addItems(["зерна", "молотый"])
+        self.flavor_edit = QTextEdit()
+        self.flavor_edit.setMaximumHeight(60)
+        self.price_spin = QDoubleSpinBox()
+        self.price_spin.setRange(0, 100000)
+        self.price_spin.setSuffix(" руб.")
+        self.volume_spin = QSpinBox()
+        self.volume_spin.setRange(0, 5000)
+        self.volume_spin.setSuffix(" г")
+        
+        layout.addRow("Название:", self.name_edit)
+        layout.addRow("Обжарка:", self.roast_combo)
+        layout.addRow("Помол:", self.grind_combo)
+        layout.addRow("Описание вкуса:", self.flavor_edit)
+        layout.addRow("Цена:", self.price_spin)
+        layout.addRow("Объем упаковки:", self.volume_spin)
+        
+        if coffee_data:
+            self.name_edit.setText(coffee_data[1])
+            self.roast_combo.setCurrentText(coffee_data[2])
+            self.grind_combo.setCurrentText(coffee_data[3])
+            self.flavor_edit.setText(coffee_data[4])
+            self.price_spin.setValue(coffee_data[5])
+            self.volume_spin.setValue(coffee_data[6])
+        
+        buttons_layout = QHBoxLayout()
+        self.save_btn = QPushButton("Сохранить")
+        self.cancel_btn = QPushButton("Отмена")
+        
+        self.save_btn.clicked.connect(self.accept)
+        self.cancel_btn.clicked.connect(self.reject)
+        
+        buttons_layout.addWidget(self.save_btn)
+        buttons_layout.addWidget(self.cancel_btn)
+        layout.addRow(buttons_layout)
+    
+    def get_data(self):
+        return {
+            'name': self.name_edit.text(),
+            'roast_level': self.roast_combo.currentText(),
+            'grind_type': self.grind_combo.currentText(),
+            'flavor_description': self.flavor_edit.toPlainText(),
+            'price': self.price_spin.value(),
+            'package_volume': self.volume_spin.value()
+        }
+
+class CoffeeApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Управление базой данных кофе")
+        self.setGeometry(100, 100, 900, 500)
+        
+        self.init_db()
+        self.init_ui()
+        self.load_data()
+    
+    def init_db(self):
+        self.conn = sqlite3.connect('coffee_shop.db')
+        self.cursor = self.conn.cursor()
+        
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS coffee (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                roast_level TEXT,
+                grind_type TEXT,
+                flavor_description TEXT,
+                price REAL,
+                package_volume INTEGER
+            )
+        ''')
+        
+        self.cursor.execute("SELECT COUNT(*) FROM coffee")
+        count = self.cursor.fetchone()[0]
+        
+        if count == 0:
+            coffees = [
+                ('Эфиопия Сидамо', 'Светлая', 'зерна', 'Цитрус, ягоды, цветочные ноты', 850.00, 250),
+                ('Колумбия Супремо', 'Средняя', 'молотый', 'Карамель, орехи, шоколад', 720.00, 250),
+                ('Ямайка Блю Маунтин', 'Средняя', 'зерна', 'Сбалансированный, сладкий, ореховый', 2500.00, 200),
+                ('Суматра Манделинг', 'Темная', 'зерна', 'Пряности, травы, полный вкус', 980.00, 300),
+                ('Коста-Рика Тарразу', 'Светлая', 'молотый', 'Мед, цитрус, сладкое послевкусие', 890.00, 250),
+                ('Бразилия Сантос', 'Средняя', 'зерна', 'Шоколад, орехи, низкая кислинка', 650.00, 500),
+                ('Гватемала Уэуэтенанго', 'Светлая', 'зерна', 'Яблоко, карамель, цветы', 950.00, 250),
+                ('Кения АА', 'Светлая', 'зерна', 'Черная смородина, цитрус, вино', 1200.00, 200),
+                ('Индонезия Сулавеси', 'Темная', 'молотый', 'Пряности, табак, шоколад', 890.00, 300),
+                ('Эфиопия Йргачеффе', 'Светлая', 'зерна', 'Жасмин, лимон, бергамот', 1100.00, 250)
+            ]
+            
+            self.cursor.executemany('''
+                INSERT INTO coffee (name, roast_level, grind_type, flavor_description, price, package_volume)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', coffees)
+            self.conn.commit()
+    
+    def init_ui(self):
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        layout = QVBoxLayout(central_widget)
+        
+        # Таблица
+        self.table = QTableWidget()
+        self.table.setColumnCount(7)
+        self.table.setHorizontalHeaderLabels(["ID", "Название", "Обжарка", "Помол", "Вкус", "Цена", "Объем"])
+        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        layout.addWidget(self.table)
+        
+        # Кнопки
+        buttons_layout = QHBoxLayout()
+        
+        self.add_btn = QPushButton("Добавить")
+        self.edit_btn = QPushButton("Редактировать")
+        self.delete_btn = QPushButton("Удалить")
+        self.refresh_btn = QPushButton("Обновить")
+        
+        self.add_btn.clicked.connect(self.add_coffee)
+        self.edit_btn.clicked.connect(self.edit_coffee)
+        self.delete_btn.clicked.connect(self.delete_coffee)
+        self.refresh_btn.clicked.connect(self.load_data)
+        
+        buttons_layout.addWidget(self.add_btn)
+        buttons_layout.addWidget(self.edit_btn)
+        buttons_layout.addWidget(self.delete_btn)
+        buttons_layout.addWidget(self.refresh_btn)
+        
+        layout.addLayout(buttons_layout)
+    
+    def load_data(self):
+        self.cursor.execute('SELECT * FROM coffee ORDER BY id')
+        coffees = self.cursor.fetchall()
+        
+        self.table.setRowCount(len(coffees))
+        
+        for row, coffee in enumerate(coffees):
+            for col, value in enumerate(coffee):
+                if col == 5:
+                    item = QTableWidgetItem(f"{value:.2f} руб.")
+                elif col == 6:
+                    item = QTableWidgetItem(f"{value} г")
+                else:
+                    item = QTableWidgetItem(str(value))
+                
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.table.setItem(row, col, item)
+        
+        self.table.resizeColumnsToContents()
+    
+    def add_coffee(self):
+        dialog = CoffeeDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            data = dialog.get_data()
+            
+            self.cursor.execute('''
+                INSERT INTO coffee (name, roast_level, grind_type, flavor_description, price, package_volume)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (data['name'], data['roast_level'], data['grind_type'], 
+                  data['flavor_description'], data['price'], data['package_volume']))
+            self.conn.commit()
+            self.load_data()
+            
+            QMessageBox.information(self, "Успех", "Кофе успешно добавлен!")
+    
+    def edit_coffee(self):
+        current_row = self.table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "Предупреждение", "Выберите запись для редактирования")
+            return
+        
+        coffee_id = int(self.table.item(current_row, 0).text())
+        
+        self.cursor.execute('SELECT * FROM coffee WHERE id = ?', (coffee_id,))
+        coffee = self.cursor.fetchone()
+        
+        dialog = CoffeeDialog(self, coffee)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            data = dialog.get_data()
+            
+            self.cursor.execute('''
+                UPDATE coffee 
+                SET name=?, roast_level=?, grind_type=?, flavor_description=?, price=?, package_volume=?
+                WHERE id=?
+            ''', (data['name'], data['roast_level'], data['grind_type'], 
+                  data['flavor_description'], data['price'], data['package_volume'], coffee_id))
+            self.conn.commit()
+            self.load_data()
+            
+            QMessageBox.information(self, "Успех", "Запись успешно обновлена!")
+    
+    def delete_coffee(self):
+        current_row = self.table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "Предупреждение", "Выберите запись для удаления")
+            return
+        
+        coffee_id = int(self.table.item(current_row, 0).text())
+        coffee_name = self.table.item(current_row, 1).text()
+        
+        reply = QMessageBox.question(self, "Подтверждение", 
+                                    f"Удалить кофе '{coffee_name}'?",
+                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            self.cursor.execute('DELETE FROM coffee WHERE id = ?', (coffee_id,))
+            self.conn.commit()
+            self.load_data()
+            
+            QMessageBox.information(self, "Успех", "Запись удалена!")
+    
+    def closeEvent(self, event):
+        self.conn.close()
+        event.accept()
+
+def main():
+    app = QApplication(sys.argv)
+    window = CoffeeApp()
+    window.show()
+    sys.exit(app.exec())
+
+if __name__ == "__main__":
+    main()
